@@ -1,0 +1,327 @@
+// onboarding.component.html
+<div class="page-shell">
+  <header class="site-header">
+    <p class="brand">Wallet <span aria-hidden="true">·</span> demo Perú</p>
+    <p class="demo-tag">Recorrido de prueba</p>
+  </header>
+
+  <div class="onboarding-layout">
+    <aside class="intro-panel" aria-labelledby="page-title">
+      <p class="eyebrow">Registro guiado</p>
+      <h1 id="page-title">Prepara tu wallet de demo</h1>
+      <p>
+        Completa los pasos con datos ficticios y consulta el resultado del
+        verificador simulado.
+      </p>
+
+      <section class="privacy-note" aria-label="Importante sobre esta demo">
+        <h2>Solo datos de prueba</h2>
+        <p>
+          No ingreses información personal. Esta demo no envía SMS, no realiza
+          pagos y no representa una verificación KYC productiva.
+        </p>
+      </section>
+    </aside>
+
+    <main class="flow-card" aria-labelledby="flow-title">
+      <div class="card-heading">
+        <div>
+          <p class="eyebrow">Onboarding</p>
+          <h2 id="flow-title">Tu recorrido</h2>
+        </div>
+        <span class="step-count">Paso {{ currentStep }} de 3</span>
+      </div>
+
+      <nav class="progress-nav" aria-label="Pasos del onboarding">
+        <ol class="progress-list">
+          <li [class.complete]="stepStatus(1) === 'complete'"
+              [class.current]="stepStatus(1) === 'current'">
+            <span class="step-number" aria-hidden="true">1</span>
+            <span class="step-label"
+              [attr.aria-current]="stepStatus(1) === 'current' ? 'step' : null">
+              Celular y código
+            </span>
+          </li>
+          <li [class.complete]="stepStatus(2) === 'complete'"
+              [class.current]="stepStatus(2) === 'current'">
+            <span class="step-number" aria-hidden="true">2</span>
+            <span class="step-label"
+              [attr.aria-current]="stepStatus(2) === 'current' ? 'step' : null">
+              Datos de prueba
+            </span>
+          </li>
+          <li [class.complete]="stepStatus(3) === 'complete'"
+              [class.current]="stepStatus(3) === 'current'">
+            <span class="step-number" aria-hidden="true">3</span>
+            <span class="step-label"
+              [attr.aria-current]="stepStatus(3) === 'current' ? 'step' : null">
+              Resultado
+            </span>
+          </li>
+        </ol>
+      </nav>
+
+      <div *ngIf="globalError" class="message message-error" role="alert">
+        {{ globalError }}
+      </div>
+
+      <section *ngIf="stage === 'intro'" class="step-content" aria-labelledby="intro-title">
+        <h3 id="intro-title">Comienza cuando estés listo</h3>
+        <p>
+          Usarás un código fijo de demostración y un identificador KYC ficticio.
+          Puedes salir antes de enviar los datos.
+        </p>
+        <button class="button button-primary"
+                type="button"
+                [disabled]="requestInProgress"
+                (click)="startFlow()">
+          <span *ngIf="requestInProgress" class="spinner" aria-hidden="true"></span>
+          {{ requestInProgress ? 'Iniciando…' : 'Comenzar onboarding' }}
+        </button>
+      </section>
+
+      <section *ngIf="stage === 'otp'" class="step-content" aria-labelledby="otp-title">
+        <h3 id="otp-title">Celular de prueba y código</h3>
+        <p>
+          No ingreses un número de celular real. Esta demo no solicita ni envía
+          SMS; valida el código localmente en el backend.
+        </p>
+
+        <form [formGroup]="otpForm" (ngSubmit)="verifyOtp()" novalidate>
+          <div class="field">
+            <label for="demo-code">
+              Código de demostración <span class="required-mark" aria-hidden="true">*</span>
+              <span class="visually-hidden"> obligatorio</span>
+            </label>
+            <p id="otp-help" class="field-help">
+              Usa el código fijo <strong>123456</strong>. No se envía SMS.
+            </p>
+            <input #otpInput
+                   id="demo-code"
+                   type="text"
+                   inputmode="numeric"
+                   autocomplete="one-time-code"
+                   formControlName="code"
+                   maxlength="6"
+                   aria-required="true"
+                   [attr.aria-invalid]="showOtpError ? 'true' : 'false'"
+                   [attr.aria-describedby]="showOtpError ? 'otp-help otp-error' : 'otp-help'"
+                   (input)="clearOtpServerError()">
+            <p *ngIf="showOtpError" id="otp-error" class="field-error" role="alert">
+              {{ otpErrorText }}
+            </p>
+          </div>
+
+          <button class="button button-primary"
+                  type="submit"
+                  [disabled]="requestInProgress">
+            <span *ngIf="requestInProgress" class="spinner" aria-hidden="true"></span>
+            {{ requestInProgress ? 'Validando…' : 'Continuar' }}
+          </button>
+        </form>
+      </section>
+
+      <section *ngIf="stage === 'kyc'" class="step-content" aria-labelledby="kyc-title">
+        <h3 id="kyc-title">Datos KYC ficticios</h3>
+        <p>
+          Esta etapa usa exclusivamente datos de prueba. No se solicitan
+          documentos reales ni información personal.
+        </p>
+
+        <form [formGroup]="kycForm" (ngSubmit)="submitKyc()" novalidate>
+          <div class="field">
+            <label for="document-type">
+              Tipo de documento <span class="required-mark" aria-hidden="true">*</span>
+              <span class="visually-hidden"> obligatorio</span>
+            </label>
+            <p id="document-type-help" class="field-help">
+              Valor fijo requerido por el contrato de demo; no es un tipo de
+              documento real.
+            </p>
+            <input id="document-type"
+                   type="text"
+                   formControlName="documentType"
+                   readonly
+                   aria-required="true"
+                   aria-describedby="document-type-help">
+          </div>
+
+          <div class="field">
+            <label for="test-document">
+              Identificador de prueba <span class="required-mark" aria-hidden="true">*</span>
+              <span class="visually-hidden"> obligatorio</span>
+            </label>
+            <p id="document-help" class="field-help">
+              Usa un valor ficticio que empiece con <strong>TEST-</strong>,
+              por ejemplo <strong>TEST-DEMO-001</strong>. No uses datos personales.
+            </p>
+            <input #documentInput
+                   id="test-document"
+                   type="text"
+                   formControlName="document"
+                   autocomplete="off"
+                   autocapitalize="characters"
+                   spellcheck="false"
+                   aria-required="true"
+                   [attr.aria-invalid]="showDocumentError ? 'true' : 'false'"
+                   [attr.aria-describedby]="showDocumentError ? 'document-help document-error' : 'document-help'">
+            <p *ngIf="showDocumentError"
+               id="document-error"
+               class="field-error"
+               role="alert">
+              {{ documentErrorText }}
+            </p>
+          </div>
+
+          <button class="button button-primary"
+                  type="submit"
+                  [disabled]="requestInProgress">
+            <span *ngIf="requestInProgress" class="spinner" aria-hidden="true"></span>
+            {{ requestInProgress ? 'Enviando a verificación…' : 'Enviar datos de prueba' }}
+          </button>
+        </form>
+      </section>
+
+      <section *ngIf="stage === 'result'" class="step-content result-content"
+               aria-labelledby="result-title" aria-live="polite">
+        <h3 id="result-title">Resultado del recorrido</h3>
+
+        <div *ngIf="resultState === 'ACTIVE'" class="status-card status-success">
+          <h4>Wallet activa confirmada</h4>
+          <p>
+            El backend confirmó el estado activo. Esta demo no habilita pagos.
+          </p>
+        </div>
+
+        <div *ngIf="resultState === 'PENDING'" class="status-card status-pending">
+          <h4>Verificación pendiente</h4>
+          <p>
+            La revisión continúa pendiente. La wallet no está activa mientras
+            el backend no confirme un estado activo.
+          </p>
+        </div>
+
+        <div *ngIf="resultState === 'REJECTED'" class="status-card status-error">
+          <h4>Verificación rechazada</h4>
+          <p>El backend informó el rechazo. La wallet no está activa.</p>
+        </div>
+
+        <div *ngIf="resultState === 'SUBMISSION_UNKNOWN'" class="status-card status-pending">
+          <h4>No se pudo confirmar el envío</h4>
+          <p>
+            No repitas automáticamente el envío. Consulta el estado para saber
+            si el backend pudo confirmar un resultado.
+          </p>
+          <button class="button button-secondary"
+                  type="button"
+                  [disabled]="requestInProgress"
+                  (click)="refreshStatus()">
+            {{ requestInProgress ? 'Consultando…' : 'Consultar estado' }}
+          </button>
+        </div>
+
+        <div *ngIf="resultState === 'CHECKING'" class="status-card status-pending">
+          <h4>Estado aún no confirmado</h4>
+          <p>No presentaremos la wallet como activa sin confirmación del backend.</p>
+          <button class="button button-secondary"
+                  type="button"
+                  [disabled]="requestInProgress"
+                  (click)="refreshStatus()">
+            {{ requestInProgress ? 'Consultando…' : 'Consultar estado' }}
+          </button>
+        </div>
+
+        <section *ngIf="resultState === 'PENDING'"
+                 class="demo-decision"
+                 aria-labelledby="decision-title">
+          <h4 id="decision-title">Resolver revisión de demo</h4>
+          <p>
+            Estas decisiones solo resuelven el mock de esta demo; no representan
+            una decisión KYC productiva.
+          </p>
+          <div class="button-row">
+            <button class="button button-primary"
+                    type="button"
+                    [disabled]="requestInProgress"
+                    (click)="resolveDecision('ACTIVE')">
+              {{ requestInProgress ? 'Procesando…' : 'Simular decisión ACTIVE' }}
+            </button>
+            <button class="button button-secondary"
+                    type="button"
+                    [disabled]="requestInProgress"
+                    (click)="resolveDecision('REJECTED')">
+              Simular decisión REJECTED
+            </button>
+          </div>
+        </section>
+
+        <section class="report-card" aria-labelledby="report-title">
+          <h4 id="report-title">Duración de la demo</h4>
+          <p>
+            Referencia de producto: <strong>3 minutos</strong>. No es un resultado
+            garantizado ni una medición del impacto de un lanzamiento.
+          </p>
+
+          <p *ngIf="reportState === 'loading'" aria-live="polite">
+            Cargando el reporte de duración…
+          </p>
+          <p *ngIf="reportState === 'empty'">
+            Aún no hay recorridos enviados para calcular una mediana observada.
+          </p>
+          <p *ngIf="reportState === 'error'">
+            El reporte no está disponible en este momento.
+          </p>
+          <div *ngIf="reportState === 'available' && report" class="report-values">
+            <p>
+              Mediana observada del onboarding:
+              <strong>{{ formatDuration(report.medianOnboardingDurationMs) }}</strong>
+              ({{ report.sampleSize }} recorridos).
+            </p>
+            <p *ngIf="report.medianKycDurationMs != null">
+              Mediana de revisión KYC:
+              <strong>{{ formatDuration(report.medianKycDurationMs) }}</strong>.
+            </p>
+            <p *ngIf="report.medianActivationDurationMs != null">
+              Mediana hasta activación:
+              <strong>{{ formatDuration(report.medianActivationDurationMs) }}</strong>.
+            </p>
+          </div>
+          <p class="report-note">
+            Los tiempos de revisión y activación se reportan aparte del tiempo
+            de onboarding.
+          </p>
+        </section>
+
+        <button class="button button-secondary"
+                type="button"
+                [disabled]="requestInProgress || closeAttempted"
+                (click)="finishFlow()">
+          {{ requestInProgress ? 'Cerrando…' : 'Finalizar recorrido' }}
+        </button>
+
+        <div *ngIf="closeError" class="message message-error" role="alert">
+          <p>{{ closeError }}</p>
+          <button class="text-button" type="button" (click)="leaveWithoutConfirmedClose()">
+            Salir sin confirmación
+          </button>
+        </div>
+      </section>
+
+      <section *ngIf="stage === 'finished'" class="step-content" aria-live="polite">
+        <h3>Recorrido finalizado</h3>
+        <p>{{ finishedMessage }}</p>
+        <p *ngIf="walletActive">
+          La wallet sigue activa según la última confirmación del backend. No se
+          habilitan pagos desde esta demo.
+        </p>
+        <p *ngIf="!walletActive">
+          No se presenta la wallet como activa.
+        </p>
+      </section>
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <p>Demo de onboarding. No procesa pagos ni utiliza datos KYC reales.</p>
+  </footer>
+</div>
