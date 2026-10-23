@@ -15,6 +15,7 @@ import {
 } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
+import { Observable, of } from 'rxjs';
 import { OnboardingApiService, OnboardingFlow, OnboardingReport } from './onboarding-api.service';
 
 type Stage = 'intro' | 'otp' | 'kyc' | 'result' | 'finished';
@@ -28,6 +29,16 @@ type ResultState =
 
 type ReportState = 'idle' | 'loading' | 'available' | 'empty' | 'error';
 
+const DEMO_CODE = '123456';
+const REGISTRY_STORAGE_KEY = 'onboarding-registry';
+
+export interface OnboardingRecord {
+  flowId: string;
+  phone: string;
+  onboardingStartedAt: string;
+  step1CompletedAt: string;
+}
+
 @Component({
   selector: 'app-onboarding',
   standalone: true,
@@ -38,6 +49,13 @@ type ReportState = 'idle' | 'loading' | 'available' | 'empty' | 'error';
 export class OnboardingComponent {
   @ViewChild('otpInput') otpInput?: ElementRef<HTMLInputElement>;
   @ViewChild('documentInput') documentInput?: ElementRef<HTMLInputElement>;
+
+  readonly phoneForm = new FormGroup({
+    phone: new FormControl('', {
+      nonNullable: true,
+      validators: [Validators.required, Validators.pattern(/^9\d{8}$/)]
+    })
+  });
 
   readonly otpForm = new FormGroup({
     code: new FormControl('', {
@@ -78,6 +96,8 @@ export class OnboardingComponent {
   report: OnboardingReport | null = null;
 
   otpAttempted = false;
+  otpSent = false;
+  onboardingStartedAt: Date | null = null;
   kycAttempted = false;
   finishedMessage = '';
 
@@ -91,6 +111,24 @@ export class OnboardingComponent {
 
   get otpControl(): FormControl<string> {
     return this.otpForm.controls.code;
+  }
+
+  get phoneControl(): FormControl<string> {
+    return this.phoneForm.controls.phone;
+  }
+
+  get showPhoneError(): boolean {
+    return this.phoneControl.touched && this.phoneControl.invalid;
+  }
+
+  get phoneErrorText(): string {
+    if (this.phoneControl.hasError('required')) {
+      return 'Ingresa un número de celular.';
+    }
+    if (this.phoneControl.hasError('pattern')) {
+      return 'El celular debe tener 9 dígitos y comenzar con 9.';
+    }
+    return 'Revisa el número de celular.';
   }
 
   get documentControl(): FormControl<string> {
@@ -141,9 +179,11 @@ export class OnboardingComponent {
 
     this.resetMessages();
     this.requestInProgress = true;
+    const startedAt = new Date();
 
     this.api.startFlow().subscribe({
       next: flow => {
+        this.onboardingStartedAt = startedAt;
         this.flowId = flow.flowId;
         this.flowState = flow.state;
         this.stage = 'otp';
@@ -156,11 +196,41 @@ export class OnboardingComponent {
     });
   }
 
+  generateCode(): void {
+    this.phoneControl.markAsTouched();
+    if (this.phoneForm.invalid || this.requestInProgress) return;
+
+    this.otpSent = true;
+    this.otpControl.setValue('123456');
+    this.otpControl.markAsUntouched();
+    this.otpAttempted = false;
+    this.otpApiError = '';
+  }
+
+  clearGeneratedCode(): void {
+    if (!this.otpSent) return;
+
+    this.otpSent = false;
+    this.otpControl.reset('');
+    this.otpAttempted = false;
+    this.otpApiError = '';
+  }
+
   verifyOtp(): void {
     this.otpAttempted = true;
     this.otpForm.markAllAsTouched();
     this.otpApiError = '';
 
+    if (!this.otpSent) return;
+    if (this.otpControl.value !== DEMO_CODE) {
+      this.otpApiError = 'El código de validación es inválido.';
+      this.otpControl.setErrors({
+        ...(this.otpControl.errors ?? {}),
+        server: true
+      });
+      this.focusFirstInvalid('otp');
+      return;
+    }
     if (this.otpForm.invalid || this.otpForm.pending) {
       this.focusFirstInvalid('otp');
       return;
@@ -170,25 +240,21 @@ export class OnboardingComponent {
     this.resetMessages();
     this.requestInProgress = true;
 
-    this.api.verifyOtp(this.flowId, this.otpControl.value).subscribe({
-      next: flow => {
-        this.flowState = flow.state;
-        this.stage = 'kyc';
-        this.requestInProgress = false;
-      },
-      error: error => {
-        const code = this.errorCode(error);
-        if (code === 'OTP_INVALID') {
-          this.otpApiError = 'El código no coincide. Revisa el código de demostración e inténtalo de nuevo.';
-          this.otpControl.setErrors({
-            ...(this.otpControl.errors ?? {}),
-            server: true
-          });
-        } else {
-          this.globalError = this.messageForError(error, 'No pudimos validar el código. Inténtalo nuevamente.');
-        }
-        this.requestInProgress = false;
-      }
+    // Respuesta simulada del backend (demo): el código 123456 siempre es OK.
+    this.simulateVerifyOtp(this.flowId).subscribe(flow => {
+      this.flowState = flow.state;
+      this.saveStep1Record(this.flowId ?? '');
+      this.stage = 'kyc';
+      this.requestInProgress = false;
+    });
+  }
+
+  private simulateVerifyOtp(flowId: string): Observable<OnboardingFlow> {
+    return of<OnboardingFlow>({
+      flowId,
+      state: 'OTP_VERIFIED',
+      currentStep: 'KYC_DATA',
+      walletActive: false
     });
   }
 
@@ -358,6 +424,25 @@ export class OnboardingComponent {
     }
 
     this.loadReport();
+  }
+
+  private saveStep1Record(flowId: string): void {
+    const completedAt = new Date();
+    const record: OnboardingRecord = {
+      flowId,
+      phone: this.phoneControl.value,
+      onboardingStartedAt: (this.onboardingStartedAt ?? completedAt).toISOString(),
+      step1CompletedAt: completedAt.toISOString()
+    };
+
+    try {
+      const stored = JSON.parse(localStorage.getItem(REGISTRY_STORAGE_KEY) ?? '[]');
+      const records: OnboardingRecord[] = Array.isArray(stored) ? stored : [];
+      records.push(record);
+      localStorage.setItem(REGISTRY_STORAGE_KEY, JSON.stringify(records));
+    } catch {
+      // Demo: si el almacenamiento no está disponible, el flujo continúa igual.
+    }
   }
 
   private loadReport(): void {

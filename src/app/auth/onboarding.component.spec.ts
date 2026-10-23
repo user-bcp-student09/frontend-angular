@@ -9,6 +9,7 @@ describe('OnboardingComponent', () => {
   let httpTesting: HttpTestingController;
 
   beforeEach(async () => {
+    localStorage.removeItem('onboarding-registry');
     await TestBed.configureTestingModule({
       imports: [OnboardingComponent, HttpClientTestingModule]
     }).compileComponents();
@@ -26,6 +27,7 @@ describe('OnboardingComponent', () => {
   it('bloquea OTP vacío sin llamar a la API y marca el campo inválido', () => {
     component.flowId = 'flow-test';
     component.stage = 'otp';
+    component.otpSent = true;
 
     component.verifyOtp();
 
@@ -36,6 +38,7 @@ describe('OnboardingComponent', () => {
 
   it('rechaza un código con formato inválido antes de llamar a la API', () => {
     component.flowId = 'flow-test';
+    component.otpSent = true;
     component.otpControl.setValue('12 456');
 
     component.verifyOtp();
@@ -44,25 +47,68 @@ describe('OnboardingComponent', () => {
     httpTesting.expectNone('/api/onboarding/flows/flow-test/otp');
   });
 
-  it('envía el OTP con formato válido al backend y avanza solo tras respuesta', () => {
+  it('muestra error y no llama a la API si el código es distinto de 123456', () => {
     component.flowId = 'flow-test';
     component.stage = 'otp';
-    component.otpControl.setValue('123456');
+    component.phoneControl.setValue('912345678');
+    component.generateCode();
+    component.otpControl.setValue('654321');
 
     component.verifyOtp();
 
-    const request = httpTesting.expectOne('/api/onboarding/flows/flow-test/otp');
-    expect(request.request.method).toBe('POST');
-    expect(request.request.body).toEqual({ code: '123456' });
+    expect(component.otpErrorText).toContain('inválido');
+    httpTesting.expectNone('/api/onboarding/flows/flow-test/otp');
+  });
 
-    request.flush({
-      flowId: 'flow-test',
-      state: 'OTP_VERIFIED',
-      currentStep: 'KYC_DATA',
-      walletActive: false
-    });
+  it('solo genera el código para un celular de 9 dígitos que comienza con 9', () => {
+    component.stage = 'otp';
 
+    for (const phone of ['812345678', '91234567', '9123456780', '91234a678']) {
+      component.phoneControl.setValue(phone);
+      component.generateCode();
+
+      expect(component.phoneForm.invalid).toBeTrue();
+      expect(component.otpSent).toBeFalse();
+      expect(component.otpControl.value).toBe('');
+    }
+
+    component.phoneControl.setValue('912345678');
+    component.generateCode();
+
+    expect(component.phoneForm.valid).toBeTrue();
+    expect(component.otpSent).toBeTrue();
+    expect(component.otpControl.value).toBe('123456');
+  });
+
+  it('requiere generar nuevamente el código si cambia el celular', () => {
+    component.stage = 'otp';
+    component.phoneControl.setValue('912345678');
+    component.generateCode();
+
+    component.phoneControl.setValue('987654321');
+    component.clearGeneratedCode();
+
+    expect(component.otpSent).toBeFalse();
+    expect(component.otpControl.value).toBe('');
+  });
+
+  it('con el código 123456 simula respuesta OK sin llamar a la API y avanza al paso 2', () => {
+    component.flowId = 'flow-test';
+    component.stage = 'otp';
+    component.phoneControl.setValue('912345678');
+    component.generateCode();
+
+    component.verifyOtp();
+
+    httpTesting.expectNone('/api/onboarding/flows/flow-test/otp');
+    const records = JSON.parse(localStorage.getItem('onboarding-registry') ?? '[]');
+    expect(records.length).toBe(1);
+    expect(records[0].flowId).toBe('flow-test');
+    expect(records[0].phone).toBe('912345678');
+    expect(records[0].onboardingStartedAt).toBeTruthy();
+    expect(records[0].step1CompletedAt).toBeTruthy();
     expect(component.stage).toBe('kyc');
+    expect(component.currentStep).toBe(2);
     expect(component.walletActive).toBeFalse();
   });
 

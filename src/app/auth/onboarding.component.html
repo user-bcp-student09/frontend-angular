@@ -83,18 +83,54 @@
       <section *ngIf="stage === 'otp'" class="step-content" aria-labelledby="otp-title">
         <h3 id="otp-title">Celular de prueba y código</h3>
         <p>
-          No ingreses un número de celular real. Esta demo no solicita ni envía
-          SMS; valida el código localmente en el backend.
+          Ingresa un celular de prueba de 9 dígitos que comience con 9. Esta
+          demo no envía SMS; el código se genera localmente.
+        </p>
+
+        <form [formGroup]="phoneForm" novalidate>
+          <div class="field">
+            <label for="demo-phone">
+              Número de celular <span class="required-mark" aria-hidden="true">*</span>
+              <span class="visually-hidden"> obligatorio</span>
+            </label>
+            <p id="phone-help" class="field-help">
+              Debe tener 9 dígitos y comenzar con 9. No uses un número real.
+            </p>
+            <input id="demo-phone"
+                   type="tel"
+                   inputmode="numeric"
+                   autocomplete="tel-national"
+                   formControlName="phone"
+                   maxlength="9"
+                   aria-required="true"
+                   [attr.aria-invalid]="showPhoneError ? 'true' : 'false'"
+                   [attr.aria-describedby]="showPhoneError ? 'phone-help phone-error' : 'phone-help'"
+                   (input)="clearGeneratedCode()">
+            <p *ngIf="showPhoneError" id="phone-error" class="field-error" role="alert">
+              {{ phoneErrorText }}
+            </p>
+          </div>
+
+          <button class="button button-secondary"
+                  type="button"
+                  [disabled]="requestInProgress || phoneForm.invalid"
+                  (click)="generateCode()">
+            Generar código
+          </button>
+        </form>
+
+        <p *ngIf="otpSent" class="message message-success" role="status">
+          Código enviado. Para esta demo, el código es <strong>123456</strong>.
         </p>
 
         <form [formGroup]="otpForm" (ngSubmit)="verifyOtp()" novalidate>
-          <div class="field">
+          <div *ngIf="otpSent" class="field">
             <label for="demo-code">
               Código de demostración <span class="required-mark" aria-hidden="true">*</span>
               <span class="visually-hidden"> obligatorio</span>
             </label>
             <p id="otp-help" class="field-help">
-              Usa el código fijo <strong>123456</strong>. No se envía SMS.
+              Código fijo de demostración: <strong>123456</strong>.
             </p>
             <input #otpInput
                    id="demo-code"
@@ -114,7 +150,7 @@
 
           <button class="button button-primary"
                   type="submit"
-                  [disabled]="requestInProgress">
+                  [disabled]="requestInProgress || !otpSent">
             <span *ngIf="requestInProgress" class="spinner" aria-hidden="true"></span>
             {{ requestInProgress ? 'Validando…' : 'Continuar' }}
           </button>
